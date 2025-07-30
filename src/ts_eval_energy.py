@@ -58,8 +58,9 @@ def bench(args):
                                          "completion": tokenizer.
                                         decode(completion, skip_special_tokens=True)[len(prompt):]})
 
+                    # the number of batched prompts may be smaller than the batch size, so multiply by the length of current batch prompt length
                     measurements.append({"measurement": measurement, "start": begin, "end": end,
-                                         "generated_tokens": len(outputs[0][len(inputs[0]):]) * batch_size})
+                                         "generated_tokens": len(outputs[0][len(inputs[0]):]) * len(batch_prompts)})
 
                 df = create_dataframe(measurements)
                 save_results(df, ins_outs,
