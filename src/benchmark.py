@@ -13,7 +13,7 @@ def main():
     parser.add_argument('-b', '--batch-size', required=True, type=int, nargs="+",
                         help="One or multiple integers specifying the batch size")
 
-    parser.add_argument('-t', '--max-new-tokens', required=True, type=int, nargs="+",
+    parser.add_argument('-l', '--max-length', required=True, type=int, nargs="+",
                         help="One or multiple integers specifying how many new tokens to generate")
 
     parser.add_argument('-d', '--device', required=True, type=str,

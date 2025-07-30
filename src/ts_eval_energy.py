@@ -36,11 +36,9 @@ def bench(args):
 
     base_out_path = os.path.join(os.getcwd(), model_name.replace('/', '_'))
 
-    batch_sizes = args.batch_size
-    max_new_tokens = args.max_new_tokens
     with torch.no_grad():
-        for batch_size in batch_sizes:
-            for _max_new_tokens in max_new_tokens:
+        for batch_size in args.batch_size:
+            for max_length in args.max_length:
                 ins_outs = []
                 measurements = []
                 for i in range(0, len(prompts), batch_size):
@@ -50,7 +48,7 @@ def bench(args):
                     # accessing zeus timestamps is troublesome
                     begin = time.time()
                     monitor.begin_window("generate")
-                    outputs = model.generate(**inputs, max_new_tokens=_max_new_tokens, do_sample=True, temperature=1,
+                    outputs = model.generate(**inputs, max_length=max_length, do_sample=True, temperature=1,
                                              pad_token_id=tokenizer.eos_token_id)
                     measurement = monitor.end_window("generate")
                     end = time.time()
@@ -65,7 +63,7 @@ def bench(args):
 
                 df = create_dataframe(measurements)
                 save_results(df, ins_outs,
-                             os.path.join(base_out_path, f"batch-size{batch_size}_max-new-tokens{_max_new_tokens}"))
+                             os.path.join(base_out_path, f"batch-size{batch_size}_max-length{max_length}"))
 
 
 def create_dataframe(measurements: list[dict]) -> DataFrame:
