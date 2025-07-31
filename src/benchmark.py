@@ -3,7 +3,6 @@ import argparse
 
 def main():
     # TODO: Add examples either to help or README.md or both
-    # TODO: Add argument so the path to a desired save location can be set
     # TODO: When more benchmark types are added, consider adding sub-commands
     parser = argparse.ArgumentParser(description="Energy Benchmark")
 
@@ -18,6 +17,9 @@ def main():
 
     parser.add_argument('-d', '--device', required=True, type=str,
                         help="On which device the model should run")
+
+    parser.add_argument('-p', '--path', required=True, type=str,
+                        help="Path were to save the results. When none, safes results relative to current working directory")
 
     args = parser.parse_args()
 

@@ -34,8 +34,7 @@ def bench(args):
 
     monitor = ZeusMonitor()
 
-    base_out_path = os.path.join(os.getcwd(), model_name.replace('/', '_'))
-
+    base_out_path = os.path.join(args.path if args.path else os.getcwd(), model_name.replace('/', '_'))
     with torch.no_grad():
         for batch_size in args.batch_size:
             for max_length in args.max_length:
