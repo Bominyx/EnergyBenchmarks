@@ -21,7 +21,7 @@ def main():
     parser.add_argument('-p', '--path', required=False, type=str,
                         help="Path were to save the results. When none, safes results relative to current working directory")
 
-    parser.add_argument('-w', '--warmup', required=False, type=bool, default=True,
+    parser.add_argument('-w', '--warmup', action=argparse.BooleanOptionalAction, default=True,
                         help="If true, do warmup inference before measurements")
     args = parser.parse_args()
 
