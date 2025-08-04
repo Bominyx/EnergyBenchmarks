@@ -18,8 +18,8 @@ def create_warmup_measure_dataset(tokenizer):
 
     token_lengths = [len(tokenizer.encode(x["text"], add_special_tokens=False)) for x in ds]
 
-    sample_per_bucket = 4
-    warmup_samples = 2
+    sample_per_bucket = 250
+    warmup_samples = 20
 
     buckets = {
         "A": {"min": 0, "max": 15, "indices": []},
