@@ -6,15 +6,14 @@ import pandas as pd
 import torch
 import json
 
+from datasets import load_dataset, DatasetDict, load_from_disk
 from pandas import DataFrame
 from transformers import AutoTokenizer, AutoModelForCausalLM
-from datasets import load_dataset
 from zeus.monitor import ZeusMonitor
 
 
-# TODO: Consider adding more parameters to this function
-def create_warmup_measure_dataset(tokenizer):
-    ds = load_dataset("agentlans/high-quality-english-sentences", split="test")
+def create_warmup_measure_dataset(tokenizer, hf_dataset_path="agentlans/high-quality-english-sentences", seed=42):
+    ds = load_dataset(hf_dataset_path, split="test")
 
     token_lengths = [len(tokenizer.encode(x["text"], add_special_tokens=False)) for x in ds]
 
@@ -34,7 +33,7 @@ def create_warmup_measure_dataset(tokenizer):
                 b["indices"].append(idx)
                 break
 
-    random.seed(42)
+    random.seed(seed)
     final_indices = []
     for name, b in buckets.items():
         if name == "A":
@@ -49,7 +48,15 @@ def create_warmup_measure_dataset(tokenizer):
     warmup_indices = sorted(warmup_indices, key=lambda i: token_lengths[i])
     final_indices = sorted(final_indices, key=lambda i: token_lengths[i])
 
-    return ds.select(warmup_indices), ds.select(final_indices)
+    warmup_dataset = ds.select(warmup_indices)
+    measurement_dataset = ds.select(final_indices)
+
+    dataset_dict = DatasetDict({
+        "warmup": warmup_dataset,
+        "measurement": measurement_dataset
+    })
+
+    return dataset_dict
 
 
 # TODO: Add function comments
@@ -60,20 +67,24 @@ def bench(args):
     tokenizer.padding_side = "left"
 
     model = AutoModelForCausalLM.from_pretrained(model_name, device_map=args.device)
-    warmup_sample, measurement_sample = create_warmup_measure_dataset(tokenizer)
+
+    if args.dataset_path:
+        dataset = load_from_disk(args.dataset_path)
+    else:
+        dataset = create_warmup_measure_dataset(tokenizer)
 
     monitor = ZeusMonitor()
     base_out_path = os.path.join(args.path if args.path else os.getcwd(), model_name.replace('/', '_'))
 
     if args.warmup:
-        prompts = warmup_sample["text"]
+        prompts = dataset["warmup"]["text"]
         for i in range(0, len(prompts), args.batch_size[0]):
             batch_prompts = prompts[i:i + args.batch_size[0]]
             inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True).to(model.device)
             model.generate(**inputs, do_sample=True, temperature=1, max_new_tokens=args.max_new_token,
                            pad_token_id=tokenizer.eos_token_id)
 
-    prompts = measurement_sample["text"]
+    prompts = dataset["measurement"]["text"]
 
     torch.manual_seed(42)
     with torch.no_grad():
