@@ -1,6 +1,7 @@
 import random
-import time
-import os
+from time import time
+from os import makedirs, getcwd
+from os.path import join, exists
 
 import pandas as pd
 import torch
@@ -16,10 +17,20 @@ from zeus.utils.logging import get_logger
 logger = get_logger(name=__name__)
 
 
-def create_warmup_measure_dataset(tokenizer, hf_dataset_path="agentlans/high-quality-english-sentences", seed=42):
-    ds = load_dataset(hf_dataset_path, split="test")
+def create_warmup_measure_dataset(tokenizer, hf_dataset_path="agentlans/high-quality-english-sentences",
+                                  seed=42) -> DatasetDict:
+    """Create the benchmark dataset containing a warmup and measurement split.
 
-    token_lengths = [len(tokenizer.encode(x["text"], add_special_tokens=False)) for x in ds]
+    Tokenizes the dataset, sorts it ascending by token length and draws 250 samples from each of the 4 buckets and an additional 20 samples from the first bucket for warmup
+
+    :param tokenizer: Tokenizer to tokenize the text
+    :param hf_dataset_path: Path to a HuggingFace repository identifier
+    :param seed: Seed for random number generator
+    :return: Dataset containing a warmup and measurement split
+    """
+    dataset = load_dataset(hf_dataset_path, split="test")
+
+    token_lengths = [len(tokenizer.encode(x["text"], add_special_tokens=False)) for x in dataset]
 
     sample_per_bucket = 250
     warmup_samples = 20
@@ -52,19 +63,23 @@ def create_warmup_measure_dataset(tokenizer, hf_dataset_path="agentlans/high-qua
     warmup_indices = sorted(warmup_indices, key=lambda i: token_lengths[i])
     final_indices = sorted(final_indices, key=lambda i: token_lengths[i])
 
-    warmup_dataset = ds.select(warmup_indices)
-    measurement_dataset = ds.select(final_indices)
+    warmup_split = dataset.select(warmup_indices)
+    measurement_split = dataset.select(final_indices)
 
     dataset_dict = DatasetDict({
-        "warmup": warmup_dataset,
-        "measurement": measurement_dataset
+        "warmup": warmup_split,
+        "measurement": measurement_split
     })
 
     return dataset_dict
 
 
-# TODO: Add function comments
 def bench(args):
+    """Driver code for the energy benchmark
+
+    :param args: arguments parsed by argparse
+    :return:
+    """
     model_name = args.model
     tokenizer = AutoTokenizer.from_pretrained(model_name, clean_up_tokenization_spaces=False)
     tokenizer.pad_token = tokenizer.eos_token
@@ -80,7 +95,11 @@ def bench(args):
         dataset = create_warmup_measure_dataset(tokenizer)
 
     monitor = ZeusMonitor()
-    base_out_path = os.path.join(args.path if args.path else os.getcwd(), model_name.replace('/', '_'))
+
+    if args.path:
+        base_out_path = join(args.path, model_name.replace('/', '_'))
+    else:
+        base_out_path = join(getcwd(), model_name.replace('/', '_'))
 
     if args.warmup:
         logger.info("Starting warmup")
@@ -90,6 +109,7 @@ def bench(args):
             inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True).to(model.device)
             model.generate(**inputs, do_sample=True, temperature=1, max_new_tokens=args.max_new_token,
                            pad_token_id=tokenizer.eos_token_id)
+
         logger.info("Warmup finished")
 
     prompts = dataset["measurement"]["text"]
@@ -98,24 +118,24 @@ def bench(args):
     with torch.no_grad():
         for batch_size in args.batch_size:
             logger.info(f"Benchmarking with batch size {batch_size}")
-            ins_outs = []
+            inputs_outputs = []
             measurements = []
             for i in range(0, len(prompts), batch_size):
                 batch_prompts = prompts[i:i + batch_size]
                 inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True).to(model.device)
 
                 # accessing zeus timestamps is troublesome
-                begin = time.time()
+                begin = time()
                 monitor.begin_window("generate")
                 outputs = model.generate(**inputs, do_sample=True, temperature=1, max_new_tokens=args.max_new_token,
                                          pad_token_id=tokenizer.eos_token_id)
                 measurement = monitor.end_window("generate")
-                end = time.time()
+                end = time()
 
                 for prompt, completion in zip(batch_prompts, outputs):
-                    ins_outs.append({"prompt": prompt,
-                                     "completion": tokenizer.
-                                    decode(completion, skip_special_tokens=True)[len(prompt):]})
+                    inputs_outputs.append({"prompt": prompt,
+                                           "completion": tokenizer.
+                                          decode(completion, skip_special_tokens=True)[len(prompt):]})
 
                 # the number of batched prompts may be smaller than the batch size, so multiply by the length of current batch prompt length
                 measurements.append({"measurement": measurement, "start": begin, "end": end,
@@ -123,12 +143,19 @@ def bench(args):
 
             logger.info(f"Benchmark with batch size {batch_size} finished")
             run_folder = f"batch-size{batch_size}_token{args.max_new_token}"
-            df_verbose, df_summary = create_dataframe(measurements, batch_size, run_folder)
-            save_results(df_verbose, df_summary, ins_outs, os.path.join(base_out_path, run_folder))
+            dataframe_verbose, dataframe_summary = create_dataframes(measurements, batch_size, run_folder)
+            save_results(dataframe_verbose, dataframe_summary, inputs_outputs, join(str(base_out_path), run_folder))
 
 
-def create_dataframe(measurements: list[dict], batch_size: int, run_folder: str) -> tuple[DataFrame, DataFrame]:
-    df_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)', 'start', 'end', "tokens"])
+def create_dataframes(measurements: list[dict], batch_size: int, run_folder: str) -> tuple[DataFrame, DataFrame]:
+    """Builds a verbose dataframe and a summary dataframe from measurements.
+
+    :param measurements: A list of dictionaries containing the zeus measurements, start and end timestamps of the measurements and the generated token count
+    :param batch_size: The batch size
+    :param run_folder: The folder were the verbose dataframe will be saved
+    :return: The dataframe containing the exact measurements of each batch and the dataframe summarizing the measurements of all batches of that batch size
+    """
+    dataframe_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)', 'start', 'end', "tokens"])
 
     for _measurement in measurements:
         measurement = _measurement['measurement']
@@ -138,7 +165,8 @@ def create_dataframe(measurements: list[dict], batch_size: int, run_folder: str)
         if not measurement.cpu_energy:
             # If Zeus can't find any CPU, the cpu_energy dict is none, so here it's manually set to 0
             measurement.cpu_energy = {0: 0}
-        df_verbose.loc[len(df_verbose)] = {
+
+        dataframe_verbose.loc[len(dataframe_verbose)] = {
             'time(s)': measurement.time,
             'cpu_energy(J)': sum(
                 measurement.cpu_energy.values()),
@@ -149,16 +177,19 @@ def create_dataframe(measurements: list[dict], batch_size: int, run_folder: str)
             'tokens': tokens
         }
 
-    total_time = df_verbose['time(s)'].sum()
-    total_cpu_energy = df_verbose['cpu_energy(J)'].sum()
-    total_gpu_energy = df_verbose['gpu_energy(J)'].sum()
-    avg_time = df_verbose['time(s)'].mean()
-    avg_cpu_energy = df_verbose['cpu_energy(J)'].mean()
-    avg_gpu_energy = df_verbose['gpu_energy(J)'].mean()
-    total_tokens = df_verbose['tokens'].sum()
-    avg_tokens = df_verbose['tokens'].mean()
+    total_time = dataframe_verbose['time(s)'].sum()
+    avg_time = dataframe_verbose['time(s)'].mean()
 
-    df_summary = pd.DataFrame({
+    total_cpu_energy = dataframe_verbose['cpu_energy(J)'].sum()
+    avg_cpu_energy = dataframe_verbose['cpu_energy(J)'].mean()
+
+    total_gpu_energy = dataframe_verbose['gpu_energy(J)'].sum()
+    avg_gpu_energy = dataframe_verbose['gpu_energy(J)'].mean()
+
+    total_tokens = dataframe_verbose['tokens'].sum()
+    avg_tokens = dataframe_verbose['tokens'].mean()
+
+    dataframe_summary = pd.DataFrame({
         'run': run_folder,
         'total_time(s)': [total_time],
         'avg_time(s)': [avg_time],
@@ -170,27 +201,35 @@ def create_dataframe(measurements: list[dict], batch_size: int, run_folder: str)
         'avg_tokens': [avg_tokens],
         'batch_size': [batch_size],
     })
-    return df_verbose, df_summary
+    return dataframe_verbose, dataframe_summary
 
 
-def save_results(df_verbose: DataFrame, df_summary: DataFrame, ins_outs: list[dict[str, str]], out_path: str):
+def save_results(dataframe_verbose: DataFrame, dataframe_summary: DataFrame, ins_outs: list[dict[str, str]],
+                 out_path: str):
+    """Saves the dataframes and list of dictionaries with the inputs and outputs to the given path.
+
+    :param dataframe_verbose: The dataframe containing the exact measurements of each batch
+    :param dataframe_summary: The dataframe summarizing the measurements of all batches of one size
+    :param ins_outs: A list of dictionaries containing the input prompts and the output completions
+    :param out_path: The output path
+    :return:
+    """
     logger.info(f"Trying to save results to {out_path}")
     try:
-        os.makedirs(out_path, exist_ok=True)
+        makedirs(out_path, exist_ok=True)
 
-        csv_path = os.path.join(out_path, "energy.csv")
-        df_verbose.to_csv(csv_path, sep=";", index=False, mode="w", header=True)
+        csv_path = join(out_path, "energy.csv")
+        dataframe_verbose.to_csv(csv_path, sep=";", index=False, mode="w", header=True)
         logger.info(f"Successfully saved verbose csv file to {csv_path}")
 
-        csv_path = os.path.join(out_path, "..", "summary.csv")
-        if not os.path.exists(csv_path):
-            df_summary.to_csv(csv_path, sep=";", index=False, mode="w", header=True)
+        csv_path = join(out_path, "..", "summary.csv")
+        if not exists(csv_path):
+            dataframe_summary.to_csv(csv_path, sep=";", index=False, mode="w", header=True)
         else:
-            df_summary.to_csv(csv_path, sep=";", index=False, mode="a", header=False)
-
+            dataframe_summary.to_csv(csv_path, sep=";", index=False, mode="a", header=False)
         logger.info(f"Successfully saved summary csv file to {csv_path}")
 
-        json_path = os.path.join(out_path, "ins_outs.json")
+        json_path = join(out_path, "ins_outs.json")
         with open(json_path, "w", encoding="utf8") as file:
             json.dump(ins_outs, file, indent=4)
         logger.info(f"Successfully saved json file to {json_path}")
