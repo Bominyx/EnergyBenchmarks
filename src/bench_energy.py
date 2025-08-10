@@ -98,9 +98,9 @@ def bench(args):
     monitor = ZeusMonitor()
 
     if args.path:
-        base_out_path = join(args.path, model_name.replace('/', '_'))
+        base_out_path = join(args.path, model_name.replace("/", "_"))
     else:
-        base_out_path = join(getcwd(), model_name.replace('/', '_'))
+        base_out_path = join(getcwd(), model_name.replace("/", "_"))
 
     if args.warmup:
         logger.info("Starting warmup")
@@ -156,51 +156,51 @@ def create_dataframes(measurements: list[dict], batch_size: int, run_folder: str
     :param run_folder: The folder were the verbose dataframe will be saved
     :return: The dataframe containing the exact measurements of each batch and the dataframe summarizing the measurements of all batches of that batch size
     """
-    dataframe_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)', 'start', 'end', "tokens"])
+    dataframe_verbose = pd.DataFrame(columns=["time(s)", "cpu_energy(J)", "gpu_energy(J)", "start", "end", "tokens"])
 
     for _measurement in measurements:
-        measurement = _measurement['measurement']
-        start = _measurement['start']
-        end = _measurement['end']
-        tokens = _measurement['tokens']
+        measurement = _measurement["measurement"]
+        start = _measurement["start"]
+        end = _measurement["end"]
+        tokens = _measurement["tokens"]
         if not measurement.cpu_energy:
             # If Zeus can't find any CPU, the cpu_energy dict is none, so here it's manually set to 0
             measurement.cpu_energy = {0: 0}
 
         dataframe_verbose.loc[len(dataframe_verbose)] = {
-            'time(s)': measurement.time,
-            'cpu_energy(J)': sum(
+            "time(s)": measurement.time,
+            "cpu_energy(J)": sum(
                 measurement.cpu_energy.values()),
-            'gpu_energy(J)': sum(
+            "gpu_energy(J)": sum(
                 measurement.gpu_energy.values()),
-            'start': start,
-            'end': end,
-            'tokens': tokens
+            "start": start,
+            "end": end,
+            "tokens": tokens
         }
 
-    total_time = dataframe_verbose['time(s)'].sum()
-    avg_time = dataframe_verbose['time(s)'].mean()
+    total_time = dataframe_verbose["time(s)"].sum()
+    avg_time = dataframe_verbose["time(s)"].mean()
 
-    total_cpu_energy = dataframe_verbose['cpu_energy(J)'].sum()
-    avg_cpu_energy = dataframe_verbose['cpu_energy(J)'].mean()
+    total_cpu_energy = dataframe_verbose["cpu_energy(J)"].sum()
+    avg_cpu_energy = dataframe_verbose["cpu_energy(J)"].mean()
 
-    total_gpu_energy = dataframe_verbose['gpu_energy(J)'].sum()
-    avg_gpu_energy = dataframe_verbose['gpu_energy(J)'].mean()
+    total_gpu_energy = dataframe_verbose["gpu_energy(J)"].sum()
+    avg_gpu_energy = dataframe_verbose["gpu_energy(J)"].mean()
 
-    total_tokens = dataframe_verbose['tokens'].sum()
-    avg_tokens = dataframe_verbose['tokens'].mean()
+    total_tokens = dataframe_verbose["tokens"].sum()
+    avg_tokens = dataframe_verbose["tokens"].mean()
 
     dataframe_summary = pd.DataFrame({
-        'run': run_folder,
-        'total_time(s)': [total_time],
-        'avg_time(s)': [avg_time],
-        'total_cpu_energy(J)': [total_cpu_energy],
-        'avg_cpu_energy(J)': [avg_cpu_energy],
-        'total_gpu_energy(J)': [total_gpu_energy],
-        'avg_gpu_energy(J)': [avg_gpu_energy],
-        'total_tokens': [total_tokens],
-        'avg_tokens': [avg_tokens],
-        'batch_size': [batch_size],
+        "run": run_folder,
+        "total_time(s)": [total_time],
+        "avg_time(s)": [avg_time],
+        "total_cpu_energy(J)": [total_cpu_energy],
+        "avg_cpu_energy(J)": [avg_cpu_energy],
+        "total_gpu_energy(J)": [total_gpu_energy],
+        "avg_gpu_energy(J)": [avg_gpu_energy],
+        "total_tokens": [total_tokens],
+        "avg_tokens": [avg_tokens],
+        "batch_size": [batch_size],
     })
     return dataframe_verbose, dataframe_summary
 
