@@ -80,6 +80,7 @@ def bench(args):
     :param args: arguments parsed by argparse
     :return:
     """
+    logger.info(f"Running energy benchmark with {args.model}")
     model_name = args.model
     tokenizer = AutoTokenizer.from_pretrained(model_name, clean_up_tokenization_spaces=False)
     tokenizer.pad_token = tokenizer.eos_token
