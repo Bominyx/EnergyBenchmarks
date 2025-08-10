@@ -2,9 +2,7 @@ import argparse
 
 
 def main():
-    # TODO: Add examples either to help or README.md or both
-    # TODO: When more benchmark types are added, consider adding sub-commands
-    parser = argparse.ArgumentParser(description="Energy Benchmark")
+    parser = argparse.ArgumentParser(description="Energy Benchmark - Highly recommended to read the README first!")
 
     parser.add_argument('-m', '--model', required=True, type=str,
                         help="HuggingFace model with text generation capabilities")
@@ -21,12 +19,31 @@ def main():
     parser.add_argument('-p', '--path', required=False, type=str,
                         help="Path were to save the results. When none, safes results relative to current working directory")
 
-    # no shorthand to make it unambiguous
-    parser.add_argument('--dataset-path', required=False, type=str,
-                        help="Path were the benchmark dataset is located. Requires a warmup and measurement split. When none, dataset is created temporarily before benchmark.")
-
     parser.add_argument('-w', '--warmup', action=argparse.BooleanOptionalAction, default=True,
                         help="If true, do warmup inference before measurements")
+
+    parser.add_argument('-s', '--seed', default=42, type=int,
+                        help="Seed to change what output is generated")
+
+    dataset_group = parser.add_argument_group("Dataset options",
+                                              description="Options to manipulate what dataset is used and how it's processed for the benchmark")
+
+    # no shorthand to make it unambiguous
+    dataset_group.add_argument('--dataset-path', required=False, type=str,
+                               help="Path were the benchmark dataset is located. Requires a warmup and measurement split. When none, dataset is created temporarily before benchmark. Takes priority over --hf-repo-id")
+
+    dataset_group.add_argument('--hf-repo-id', default='agentlans/high-quality-english-sentences', type=str,
+                               help="HuggingFace repository id of the HuggingFace dataset")
+
+    dataset_group.add_argument('--dataset-split', default='test', type=str,
+                               help="Dataset split name")
+
+    dataset_group.add_argument('--measure-samples', default=250, type=int,
+                               help="How many samples to draw from each bucket")
+
+    dataset_group.add_argument('--warmup-samples', default=20, type=int,
+                               help="How many warmup samples to draw from the first bucket")
+
     args = parser.parse_args()
 
     # local import so it only gets loaded when actually used and the help call doesn't take too long to display

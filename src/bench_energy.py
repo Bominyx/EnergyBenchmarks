@@ -9,7 +9,7 @@ import json
 
 from datasets import load_dataset, DatasetDict, load_from_disk
 from pandas import DataFrame
-from transformers import AutoTokenizer, AutoModelForCausalLM
+from transformers import AutoTokenizer, AutoModelForCausalLM, PreTrainedTokenizerBase
 from zeus.monitor import ZeusMonitor
 from zeus.utils.logging import get_logger
 
@@ -17,23 +17,23 @@ from zeus.utils.logging import get_logger
 logger = get_logger(name=__name__)
 
 
-def create_warmup_measure_dataset(tokenizer, hf_dataset_path="agentlans/high-quality-english-sentences",
-                                  seed=42) -> DatasetDict:
+def create_warmup_measure_dataset(tokenizer: PreTrainedTokenizerBase, hf_dataset_path: str, dataset_split: str,
+                                  sample_per_bucket: int, warmup_samples: int) -> DatasetDict:
     """Create the benchmark dataset containing a warmup and measurement split.
 
-    Tokenizes the dataset, sorts it ascending by token length and draws 250 samples from each of the 4 buckets and an additional 20 samples from the first bucket for warmup
+    Tokenizes the dataset, draws samples based on token length from each of 4 buckets and sorts the data ascending by token length.
+    Additional samples from the first bucket are drawn for warmup.
 
     :param tokenizer: Tokenizer to tokenize the text
     :param hf_dataset_path: Path to a HuggingFace repository identifier
-    :param seed: Seed for random number generator
+    :param dataset_split: Name of the dataset split e.g. test
+    :param sample_per_bucket: How many samples for measurements to draw from each bucket
+    :param warmup_samples: How many samples for warmup to draw from the first bucket
     :return: Dataset containing a warmup and measurement split
     """
-    dataset = load_dataset(hf_dataset_path, split="test")
+    dataset = load_dataset(hf_dataset_path, split=dataset_split)
 
     token_lengths = [len(tokenizer.encode(x["text"], add_special_tokens=False)) for x in dataset]
-
-    sample_per_bucket = 250
-    warmup_samples = 20
 
     buckets = {
         "A": {"min": 0, "max": 15, "indices": []},
@@ -48,7 +48,7 @@ def create_warmup_measure_dataset(tokenizer, hf_dataset_path="agentlans/high-qua
                 b["indices"].append(idx)
                 break
 
-    random.seed(seed)
+    random.seed(42)
     final_indices = []
     for name, b in buckets.items():
         if name == "A":
@@ -92,7 +92,8 @@ def bench(args):
         dataset = load_from_disk(args.dataset_path)
     else:
         logger.info("Creating benchmark dataset in-memory")
-        dataset = create_warmup_measure_dataset(tokenizer)
+        dataset = create_warmup_measure_dataset(tokenizer, args.hf_repo_id, args.dataset_split, args.measure_samples,
+                                                args.warmup_samples)
 
     monitor = ZeusMonitor()
 
@@ -114,7 +115,7 @@ def bench(args):
 
     prompts = dataset["measurement"]["text"]
 
-    torch.manual_seed(42)
+    torch.manual_seed(args.seed)
     with torch.no_grad():
         for batch_size in args.batch_size:
             logger.info(f"Benchmarking with batch size {batch_size}")
