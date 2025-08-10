@@ -10,6 +10,10 @@ from datasets import load_dataset, DatasetDict, load_from_disk
 from pandas import DataFrame
 from transformers import AutoTokenizer, AutoModelForCausalLM
 from zeus.monitor import ZeusMonitor
+from zeus.utils.logging import get_logger
+
+# re-using logger from zeus to keep console log uniform
+logger = get_logger(name=__name__)
 
 
 def create_warmup_measure_dataset(tokenizer, hf_dataset_path="agentlans/high-quality-english-sentences", seed=42):
@@ -69,26 +73,31 @@ def bench(args):
     model = AutoModelForCausalLM.from_pretrained(model_name, device_map=args.device)
 
     if args.dataset_path:
+        logger.info("Loading benchmark dataset from disk")
         dataset = load_from_disk(args.dataset_path)
     else:
+        logger.info("Creating benchmark dataset in-memory")
         dataset = create_warmup_measure_dataset(tokenizer)
 
     monitor = ZeusMonitor()
     base_out_path = os.path.join(args.path if args.path else os.getcwd(), model_name.replace('/', '_'))
 
     if args.warmup:
+        logger.info("Starting warmup")
         prompts = dataset["warmup"]["text"]
         for i in range(0, len(prompts), args.batch_size[0]):
             batch_prompts = prompts[i:i + args.batch_size[0]]
             inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True).to(model.device)
             model.generate(**inputs, do_sample=True, temperature=1, max_new_tokens=args.max_new_token,
                            pad_token_id=tokenizer.eos_token_id)
+        logger.info("Warmup finished")
 
     prompts = dataset["measurement"]["text"]
 
     torch.manual_seed(42)
     with torch.no_grad():
         for batch_size in args.batch_size:
+            logger.info(f"Benchmarking with batch size {batch_size}")
             ins_outs = []
             measurements = []
             for i in range(0, len(prompts), batch_size):
@@ -112,6 +121,7 @@ def bench(args):
                 measurements.append({"measurement": measurement, "start": begin, "end": end,
                                      "generated_tokens": len(outputs[0][len(inputs[0]):]) * len(batch_prompts)})
 
+            logger.info(f"Benchmark with batch size {batch_size} finished")
             df = create_dataframe(measurements)
             save_results(df, ins_outs,
                          os.path.join(base_out_path, f"batch-size{batch_size}_token{args.max_new_token}"))
@@ -143,9 +153,18 @@ def create_dataframe(measurements: list[dict]) -> DataFrame:
 
 
 def save_results(df: DataFrame, ins_outs: list[dict[str, str]], out_path: str):
-    os.makedirs(out_path, exist_ok=True)
+    logger.info(f"Trying to save results to {out_path}")
+    try:
+        os.makedirs(out_path, exist_ok=True)
 
-    with open(os.path.join(out_path, "ins_outs.json"), "w", encoding="utf8") as file:
-        json.dump(ins_outs, file, indent=4)
+        csv_path = os.path.join(out_path, "energy.csv")
+        df.to_csv(csv_path, sep=";", index=False, mode="w", header=True)
+        logger.info(f"Successfully saved csv file to {csv_path}")
 
-    df.to_csv(os.path.join(out_path, "energy.csv"), sep=";", index=False, mode="w", header=True)
+        json_path = os.path.join(out_path, "ins_outs.json")
+        with open(json_path, "w", encoding="utf8") as file:
+            json.dump(ins_outs, file, indent=4)
+        logger.info(f"Successfully saved json file to {json_path}")
+
+    except Exception as e:
+        logger.error(f"Failed to save results: {e}")
