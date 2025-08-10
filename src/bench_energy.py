@@ -119,26 +119,26 @@ def bench(args):
 
                 # the number of batched prompts may be smaller than the batch size, so multiply by the length of current batch prompt length
                 measurements.append({"measurement": measurement, "start": begin, "end": end,
-                                     "generated_tokens": len(outputs[0][len(inputs[0]):]) * len(batch_prompts)})
+                                     "tokens": len(outputs[0][len(inputs[0]):]) * len(batch_prompts)})
 
             logger.info(f"Benchmark with batch size {batch_size} finished")
-            df = create_dataframe(measurements)
-            save_results(df, ins_outs,
-                         os.path.join(base_out_path, f"batch-size{batch_size}_token{args.max_new_token}"))
+            run_folder = f"batch-size{batch_size}_token{args.max_new_token}"
+            df_verbose, df_summary = create_dataframe(measurements, batch_size, run_folder)
+            save_results(df_verbose, df_summary, ins_outs, os.path.join(base_out_path, run_folder))
 
 
-def create_dataframe(measurements: list[dict]) -> DataFrame:
-    df = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)', 'start', 'end', "generated_tokens"])
+def create_dataframe(measurements: list[dict], batch_size: int, run_folder: str) -> tuple[DataFrame, DataFrame]:
+    df_verbose = pd.DataFrame(columns=['time(s)', 'cpu_energy(J)', 'gpu_energy(J)', 'start', 'end', "tokens"])
 
     for _measurement in measurements:
         measurement = _measurement['measurement']
         start = _measurement['start']
         end = _measurement['end']
-        generated_tokens = _measurement['generated_tokens']
+        tokens = _measurement['tokens']
         if not measurement.cpu_energy:
             # If Zeus can't find any CPU, the cpu_energy dict is none, so here it's manually set to 0
             measurement.cpu_energy = {0: 0}
-        df.loc[len(df)] = {
+        df_verbose.loc[len(df_verbose)] = {
             'time(s)': measurement.time,
             'cpu_energy(J)': sum(
                 measurement.cpu_energy.values()),
@@ -146,20 +146,49 @@ def create_dataframe(measurements: list[dict]) -> DataFrame:
                 measurement.gpu_energy.values()),
             'start': start,
             'end': end,
-            'generated_tokens': generated_tokens
+            'tokens': tokens
         }
 
-    return df
+    total_time = df_verbose['time(s)'].sum()
+    total_cpu_energy = df_verbose['cpu_energy(J)'].sum()
+    total_gpu_energy = df_verbose['gpu_energy(J)'].sum()
+    avg_time = df_verbose['time(s)'].mean()
+    avg_cpu_energy = df_verbose['cpu_energy(J)'].mean()
+    avg_gpu_energy = df_verbose['gpu_energy(J)'].mean()
+    total_tokens = df_verbose['tokens'].sum()
+    avg_tokens = df_verbose['tokens'].mean()
+
+    df_summary = pd.DataFrame({
+        'run': run_folder,
+        'total_time(s)': [total_time],
+        'avg_time(s)': [avg_time],
+        'total_cpu_energy(J)': [total_cpu_energy],
+        'avg_cpu_energy(J)': [avg_cpu_energy],
+        'total_gpu_energy(J)': [total_gpu_energy],
+        'avg_gpu_energy(J)': [avg_gpu_energy],
+        'total_tokens': [total_tokens],
+        'avg_tokens': [avg_tokens],
+        'batch_size': [batch_size],
+    })
+    return df_verbose, df_summary
 
 
-def save_results(df: DataFrame, ins_outs: list[dict[str, str]], out_path: str):
+def save_results(df_verbose: DataFrame, df_summary: DataFrame, ins_outs: list[dict[str, str]], out_path: str):
     logger.info(f"Trying to save results to {out_path}")
     try:
         os.makedirs(out_path, exist_ok=True)
 
         csv_path = os.path.join(out_path, "energy.csv")
-        df.to_csv(csv_path, sep=";", index=False, mode="w", header=True)
-        logger.info(f"Successfully saved csv file to {csv_path}")
+        df_verbose.to_csv(csv_path, sep=";", index=False, mode="w", header=True)
+        logger.info(f"Successfully saved verbose csv file to {csv_path}")
+
+        csv_path = os.path.join(out_path, "..", "summary.csv")
+        if not os.path.exists(csv_path):
+            df_summary.to_csv(csv_path, sep=";", index=False, mode="w", header=True)
+        else:
+            df_summary.to_csv(csv_path, sep=";", index=False, mode="a", header=False)
+
+        logger.info(f"Successfully saved summary csv file to {csv_path}")
 
         json_path = os.path.join(out_path, "ins_outs.json")
         with open(json_path, "w", encoding="utf8") as file:
