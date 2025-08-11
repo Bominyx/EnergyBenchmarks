@@ -1,6 +1,54 @@
 # About
 This is the repository for my bachelor thesis at the South Westphalia University of Applied Sciences, which is about energy benchmarks for language models.
-# Main Features
-TODO
+
+---
+# Basics
+Energy consumption is measured in-program using [Zeus](https://ml.energy/zeus/measure/).
+Since Zeus relies on Intel's RAPL, [root privileges](https://ml.energy/zeus/getting_started/#system-privileges) are required for CPU measurements.
+Additionally, the RAPL interfaces are natively supported only on Linux.
+GPU measurements can be done without any additional privileges.
+
+The measurements are carried out by defining a starting window before, and an ending window after, the text generation process using a given model.
+The model processes a dataset and generates output for each data point in an iterative manner.
+Because the measurement window covers only the generation phase, dataset loading and tokenization is excluded from the measurements.
+
+By default, the dataset [agentlans/high-quality-english-sentences](https://huggingface.co/datasets/agentlans/high-quality-english-sentences) is used for benchmarks.
+This dataset undergoes major restructuring before use. In short, samples are drawn based on token length from each of four buckets,
+and the resulting data is sorted in ascending order by token length. By default, 250 samples are drawn from each bucket,
+and an additional 20 samples are drawn for the warmup phase. This results in a new dataset containing a "measurement" split with 1000 data points and a "warmup" split with 20 data points.
+The purpose of this design is to observe potential patterns of increased power consumption with longer input sequences.
+
+---
 # Usage
-TODO
+To benchmark a model, execute the benchmark.py script located in the src folder. For a benchmark at least the following parameters are required:
+- --model: The model to benchmark. This should be a string representing the repository ID of the HuggingFace model e.g. "openai-community/gpt2"
+- --batch-size: One or more integers specifying the batch size
+- --max-new-token: The number of new tokens to generate
+- --device: The device on which the model should run. e.g. "cuda:0" or "cpu". Only one device is currently supported
+
+An optional but highly useful parameter is --path, which specifies where the results should be saved.
+If not set, the results will be saved in the current working directory.
+
+A minimal example for a CUDA-capable GPU looks like this:
+```
+python benchmark.py --model "openai-community/gpt2-xl" --batch-size 1 --max-new-token 1 --device "cuda:0"
+```
+This can be used to quickly check whether the necessary packages are installed correctly.
+Note that a batch size of 1 and a max new token value of 1 are quite small and may not produce meaningful results.
+
+A more realistic example might look like this:
+```
+python benchmark.py --model "openai-community/gpt2-xl" --batch-size 1 2 4 8 --max-new-token 128 --device "cuda:0" --path ../output/
+```
+Here, multiple batch sizes are specified, meaning the benchmark will be run for each of them.
+In combination with a max new token value of 128, this benchmark may take a considerable amount of time, depending on the hardware.
+
+## Dataset options
+There are multiple options to change what dataset is used and how the dataset is processed:
+- --dataset-path: Path where the dataset is located on disk. A warmup and measurement split are required. This takes priority over the other dataset options
+- --hf-repo-id: The HuggingFace repository ID of a dataset
+- --dataset-split: Which split of the dataset should be used e.g. "train" or "test"
+- --measure-samples: How many samples to draw from each bucket
+- --warmup-samples: How many warmup samples to draw
+
+An example for how to create a dataset can be found in `notebooks/create_dataset.ipynb`.
