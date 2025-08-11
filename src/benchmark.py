@@ -47,8 +47,8 @@ def main():
     args = parser.parse_args()
 
     # local import so it only gets loaded when actually used and the help call doesn't take too long to display
-    import bench_energy
-    bench_energy.bench(args)
+    import energy
+    energy.bench(args)
 
 
 if __name__ == "__main__":

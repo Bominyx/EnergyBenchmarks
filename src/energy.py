@@ -113,7 +113,7 @@ def create_warmup_measure_dataset(tokenizer: PreTrainedTokenizerBase, hf_dataset
                                   sample_per_bucket: int, warmup_samples: int) -> DatasetDict:
     """Create the benchmark dataset containing a warmup and measurement split.
 
-    Tokenizes the dataset, draws samples based on token length from each of 4 buckets and sorts the data ascending by token length.
+    Tokenizes the dataset, draws samples based on token length for each of 4 buckets and sorts the data ascending by token length.
     Additional samples from the first bucket are drawn for warmup.
 
     :param tokenizer: Tokenizer to tokenize the text
