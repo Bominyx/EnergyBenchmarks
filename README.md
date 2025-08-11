@@ -58,6 +58,7 @@ python benchmark.py --model "openai-community/gpt2-xl" --batch-size 1 --max-new-
 
 An example for how to create a dataset can be found in `notebooks/create_dataset.ipynb`.
 
+Check out `example_runner.py` and `runner.py` located in the `src` folder for examples on how the benchmarks can be automated.
 # Result Structure
 A benchmark executed with the model openai-community/gpt2-xl, batch size 1 and 2 and a max new token value of 128 will
 have the following structure:
