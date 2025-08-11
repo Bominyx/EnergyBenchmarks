@@ -17,6 +17,98 @@ from zeus.utils.logging import get_logger
 logger = get_logger(name=__name__)
 
 
+def bench(args):
+    """Driver code for the energy benchmark
+
+    :param args: arguments parsed by argparse
+    :return:
+    """
+    logger.info(f"Running energy benchmark with {args.model}")
+
+    tokenizer = AutoTokenizer.from_pretrained(args.model, clean_up_tokenization_spaces=False)
+    tokenizer.pad_token = tokenizer.eos_token
+    tokenizer.padding_side = "left"
+
+    model = AutoModelForCausalLM.from_pretrained(args.model, device_map=args.device)
+
+    if args.dataset_path:
+        logger.info("Loading benchmark dataset from disk")
+        dataset = load_from_disk(args.dataset_path)
+    else:
+        logger.info("Creating benchmark dataset in-memory")
+        dataset = create_warmup_measure_dataset(tokenizer, args.hf_repo_id, args.dataset_split,
+                                                args.measure_samples, args.warmup_samples)
+
+    monitor = ZeusMonitor()
+
+    if args.path:
+        base_out_path = join(args.path, args.model.replace("/", "_"))
+    else:
+        base_out_path = join(getcwd(), args.model.replace("/", "_"))
+
+    if args.warmup:
+        logger.info("Starting warmup")
+        prompts = dataset["warmup"]["text"]
+
+        # warmup is only done once. first batch size suffices
+        for i in range(0, len(prompts), args.batch_size[0]):
+            # slice includes only the remaining elements if it exceeds the list length
+            batch_prompts = prompts[i:i + args.batch_size[0]]
+            inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True).to(model.device)
+            model.generate(**inputs,
+                           do_sample=True,
+                           temperature=1,
+                           max_new_tokens=args.max_new_token,
+                           pad_token_id=tokenizer.eos_token_id)
+
+        logger.info("Warmup finished")
+
+    prompts = dataset["measurement"]["text"]
+
+    torch.manual_seed(args.seed)
+    with torch.no_grad():
+        for batch_size in args.batch_size:
+            logger.info(f"Benchmarking with batch size {batch_size}")
+            inputs_outputs = []
+            measurements = []
+            for i in range(0, len(prompts), batch_size):
+                batch_prompts = prompts[i:i + batch_size]
+                inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True).to(model.device)
+
+                # accessing timestamps of a ZeusMonitor is troublesome
+                begin = time()
+                monitor.begin_window("generate", sync_execution=True)
+                outputs = model.generate(**inputs,
+                                         do_sample=True,
+                                         temperature=1,
+                                         max_new_tokens=args.max_new_token,
+                                         pad_token_id=tokenizer.eos_token_id)
+                measurement = monitor.end_window("generate", sync_execution=True)
+                end = time()
+
+                for prompt, completion in zip(batch_prompts, outputs):
+                    inputs_outputs.append({
+                        "prompt": prompt,
+                        "completion": tokenizer.decode(completion, skip_special_tokens=True)[len(prompt):]
+                    })
+
+                # length of input (all are same length due to padding)
+                inputs_length = len(inputs[0])
+                # remove the prompt part from the output to keep only the completion
+                completion = outputs[0][inputs_length:]
+                # total generated tokens for the batch
+                tokens = len(batch_prompts) * len(completion)
+
+                measurements.append({
+                    "measurement": measurement, "start": begin, "end": end, "tokens": tokens
+                })
+
+            logger.info(f"Benchmark with batch size {batch_size} finished")
+            run_folder = f"batch-size{batch_size}_token{args.max_new_token}"
+            dataframe_verbose, dataframe_summary = create_dataframes(measurements, batch_size, run_folder)
+            save_results(dataframe_verbose, dataframe_summary, inputs_outputs, join(str(base_out_path), run_folder))
+
+
 def create_warmup_measure_dataset(tokenizer: PreTrainedTokenizerBase, hf_dataset_path: str, dataset_split: str,
                                   sample_per_bucket: int, warmup_samples: int) -> DatasetDict:
     """Create the benchmark dataset containing a warmup and measurement split.
@@ -43,19 +135,19 @@ def create_warmup_measure_dataset(tokenizer: PreTrainedTokenizerBase, hf_dataset
     }
 
     for idx, length in enumerate(token_lengths):
-        for b in buckets.values():
-            if b["min"] <= length <= b["max"]:
-                b["indices"].append(idx)
+        for bucket in buckets.values():
+            if bucket["min"] <= length <= bucket["max"]:
+                bucket["indices"].append(idx)
                 break
 
     random.seed(42)
     final_indices = []
-    for name, b in buckets.items():
+    for name, bucket in buckets.items():
         if name == "A":
             # bucket samples and warmup samples are drawn together to make sure every value is unique
-            final_indices.extend(random.sample(b["indices"], sample_per_bucket + warmup_samples))
+            final_indices.extend(random.sample(bucket["indices"], sample_per_bucket + warmup_samples))
         else:
-            final_indices.extend(random.sample(b["indices"], sample_per_bucket))
+            final_indices.extend(random.sample(bucket["indices"], sample_per_bucket))
 
     warmup_indices = final_indices[:warmup_samples]
     final_indices = final_indices[warmup_samples:]
@@ -74,81 +166,6 @@ def create_warmup_measure_dataset(tokenizer: PreTrainedTokenizerBase, hf_dataset
     return dataset_dict
 
 
-def bench(args):
-    """Driver code for the energy benchmark
-
-    :param args: arguments parsed by argparse
-    :return:
-    """
-    logger.info(f"Running energy benchmark with {args.model}")
-    model_name = args.model
-    tokenizer = AutoTokenizer.from_pretrained(model_name, clean_up_tokenization_spaces=False)
-    tokenizer.pad_token = tokenizer.eos_token
-    tokenizer.padding_side = "left"
-
-    model = AutoModelForCausalLM.from_pretrained(model_name, device_map=args.device)
-
-    if args.dataset_path:
-        logger.info("Loading benchmark dataset from disk")
-        dataset = load_from_disk(args.dataset_path)
-    else:
-        logger.info("Creating benchmark dataset in-memory")
-        dataset = create_warmup_measure_dataset(tokenizer, args.hf_repo_id, args.dataset_split, args.measure_samples,
-                                                args.warmup_samples)
-
-    monitor = ZeusMonitor()
-
-    if args.path:
-        base_out_path = join(args.path, model_name.replace("/", "_"))
-    else:
-        base_out_path = join(getcwd(), model_name.replace("/", "_"))
-
-    if args.warmup:
-        logger.info("Starting warmup")
-        prompts = dataset["warmup"]["text"]
-        for i in range(0, len(prompts), args.batch_size[0]):
-            batch_prompts = prompts[i:i + args.batch_size[0]]
-            inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True).to(model.device)
-            model.generate(**inputs, do_sample=True, temperature=1, max_new_tokens=args.max_new_token,
-                           pad_token_id=tokenizer.eos_token_id)
-
-        logger.info("Warmup finished")
-
-    prompts = dataset["measurement"]["text"]
-
-    torch.manual_seed(args.seed)
-    with torch.no_grad():
-        for batch_size in args.batch_size:
-            logger.info(f"Benchmarking with batch size {batch_size}")
-            inputs_outputs = []
-            measurements = []
-            for i in range(0, len(prompts), batch_size):
-                batch_prompts = prompts[i:i + batch_size]
-                inputs = tokenizer(batch_prompts, return_tensors="pt", padding=True).to(model.device)
-
-                # accessing zeus timestamps is troublesome
-                begin = time()
-                monitor.begin_window("generate")
-                outputs = model.generate(**inputs, do_sample=True, temperature=1, max_new_tokens=args.max_new_token,
-                                         pad_token_id=tokenizer.eos_token_id)
-                measurement = monitor.end_window("generate")
-                end = time()
-
-                for prompt, completion in zip(batch_prompts, outputs):
-                    inputs_outputs.append({"prompt": prompt,
-                                           "completion": tokenizer.
-                                          decode(completion, skip_special_tokens=True)[len(prompt):]})
-
-                # the number of batched prompts may be smaller than the batch size, so multiply by the length of current batch prompt length
-                measurements.append({"measurement": measurement, "start": begin, "end": end,
-                                     "tokens": len(outputs[0][len(inputs[0]):]) * len(batch_prompts)})
-
-            logger.info(f"Benchmark with batch size {batch_size} finished")
-            run_folder = f"batch-size{batch_size}_token{args.max_new_token}"
-            dataframe_verbose, dataframe_summary = create_dataframes(measurements, batch_size, run_folder)
-            save_results(dataframe_verbose, dataframe_summary, inputs_outputs, join(str(base_out_path), run_folder))
-
-
 def create_dataframes(measurements: list[dict], batch_size: int, run_folder: str) -> tuple[DataFrame, DataFrame]:
     """Builds a verbose dataframe and a summary dataframe from measurements.
 
@@ -165,7 +182,7 @@ def create_dataframes(measurements: list[dict], batch_size: int, run_folder: str
         end = _measurement["end"]
         tokens = _measurement["tokens"]
         if not measurement.cpu_energy:
-            # If Zeus can't find any CPU, the cpu_energy dict is none, so here it's manually set to 0
+            # if zeus can't find any cpu, the cpu_energy dict is none, so here it's manually set to 0
             measurement.cpu_energy = {0: 0}
 
         dataframe_verbose.loc[len(dataframe_verbose)] = {
