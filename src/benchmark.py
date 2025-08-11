@@ -5,22 +5,22 @@ def main():
     parser = argparse.ArgumentParser(description="Energy Benchmark - Highly recommended to read the README first!")
 
     parser.add_argument("-m", "--model", required=True, type=str,
-                        help="HuggingFace model with text generation capabilities")
+                        help="HuggingFace repository ID of a model")
 
     parser.add_argument("-b", "--batch-size", required=True, type=int, nargs="+",
                         help="One or multiple integers specifying the batch size")
 
     parser.add_argument("-t", "--max-new-token", required=True, type=int,
-                        help="One or multiple integers specifying how many new tokens to generate")
+                        help="The number of new tokens to generate")
 
     parser.add_argument("-d", "--device", required=True, type=str,
-                        help="On which device the model should run")
+                        help="The device on which the model should run")
 
     parser.add_argument("-p", "--path", required=False, type=str,
-                        help="Path were to save the results. When none, safes results relative to current working directory")
+                        help="Path were to save the results. When none, safes results in the current working directory")
 
     parser.add_argument("-w", "--warmup", action=argparse.BooleanOptionalAction, default=True,
-                        help="If true, do warmup inference before measurements")
+                        help="Whether the model should do warmup generation or not. By default, true")
 
     parser.add_argument("-s", "--seed", default=42, type=int,
                         help="Seed to change what output is generated")
@@ -30,10 +30,10 @@ def main():
 
     # no shorthand to make it unambiguous
     dataset_group.add_argument("--dataset-path", required=False, type=str,
-                               help="Path were the benchmark dataset is located. Requires a warmup and measurement split. When none, dataset is created temporarily before benchmark. Takes priority over --hf-repo-id")
+                               help="Path were the benchmark dataset is located on disk. Takes priority over other dataset options")
 
     dataset_group.add_argument("--hf-repo-id", default="agentlans/high-quality-english-sentences", type=str,
-                               help="HuggingFace repository id of the HuggingFace dataset")
+                               help="HuggingFace repository ID of a dataset")
 
     dataset_group.add_argument("--dataset-split", default="test", type=str,
                                help="Dataset split name")
@@ -42,7 +42,7 @@ def main():
                                help="How many samples to draw from each bucket")
 
     dataset_group.add_argument("--warmup-samples", default=20, type=int,
-                               help="How many warmup samples to draw from the first bucket")
+                               help="How many warmup samples to draw")
 
     args = parser.parse_args()
 
