@@ -17,6 +17,13 @@ and the resulting data is sorted in ascending order by token length. By default,
 and an additional 20 samples are drawn for the warmup phase. This results in a new dataset containing a "measurement" split with 1000 data points and a "warmup" split with 20 data points.
 The purpose of this design is to observe potential patterns of increased power consumption with longer input sequences.
 
+# Installation
+All necessary packages can be installed via the `requirements.txt`:
+```
+pip install -r requirements.txt
+```
+**Hint:** On Windows, you may want to install [PyTorch](https://pytorch.org/get-started/locally/) with the correct compute platform, before installing the `requirements.txt`.
+
 # Usage
 To benchmark a model, execute the `benchmark.py` script located in the `src` folder. For a benchmark at least the following parameters are required:
 - `--model`: The model to benchmark. This should be a string representing the repository ID of the HuggingFace model e.g. "openai-community/gpt2"

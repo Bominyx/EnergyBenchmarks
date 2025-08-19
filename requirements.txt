@@ -1,0 +1,9 @@
+torch
+transformers
+accelerate
+datasets
+zeus
+notebook
+ipywidgets
+matplotlib
+pandas
