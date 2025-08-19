@@ -50,6 +50,24 @@ python benchmark.py --model "openai-community/gpt2-xl" --batch-size 1 2 4 8 --ma
 Here, multiple batch sizes are specified, meaning the benchmark will be run for each of them.
 In combination with a max new token value of 128, this benchmark may take a considerable amount of time, depending on the hardware.
 
+## Zeus Options
+There are multiple optional parameters to change how the ZeusMonitor works:
+- `--gpu-indices`: The indices of the GPUs to monitor
+- `--cpu-indices`: The indices of the CPUs to monitor
+- `--approx-instant-energy`: If energy should be approximated. By default, false
+
+When the measurement window is shorter than the update for the energy counter, the value may be 0,
+so the `--approx-instant-energy` flag can be used to approximate the energy.
+
+By default, all devices which Zeus can find, are monitored.
+In a multi-GPU and CPU-setup, it may be handy, to specify which devices should be monitored. For example in a 4 GPU-setup
+only the 4th GPU (index starting at 0) should be monitored:
+```
+python benchmark.py --model "openai-community/gpt2-xl" --batch-size 1 --max-new-token 1 --device "cuda:3" --gpu-indices 3
+```
+
+
+
 ## Dataset Options
 There are multiple optional parameters to change what dataset is used and how the dataset is processed:
 - `--dataset-path`: Path where the dataset is located on disk. A warmup and measurement split are required. This takes priority over the other dataset options

@@ -25,10 +25,22 @@ def main():
     parser.add_argument("-s", "--seed", default=42, type=int,
                         help="Seed to change what output is generated")
 
+    # no shorthand to make it unambiguous
+    zeus_group = parser.add_argument_group("Zeus options",
+                                           description="Options to manipulate the ZeusMonitor")
+
+    zeus_group.add_argument("--gpu-indices", required=False, type=int, nargs="+",
+                            help="The indices of the GPUs to monitor")
+
+    zeus_group.add_argument("--cpu-indices", required=False, type=int, nargs="+",
+                            help="The indices of the CPUs to monitor")
+
+    zeus_group.add_argument("--approx-instant-energy", action=argparse.BooleanOptionalAction, default=False,
+                            help="If energy should be approximated")
+
     dataset_group = parser.add_argument_group("Dataset options",
                                               description="Options to manipulate what dataset is used and how its processed for the benchmark")
 
-    # no shorthand to make it unambiguous
     dataset_group.add_argument("--dataset-path", required=False, type=str,
                                help="Path were the benchmark dataset is located on disk. Takes priority over other dataset options")
 

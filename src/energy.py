@@ -25,6 +25,11 @@ def bench(args):
     """
     logger.info(f"Running energy benchmark with {args.model}")
 
+    monitor = ZeusMonitor(
+        gpu_indices=args.gpu_indices,
+        cpu_indices=args.cpu_indices,
+        approx_instant_energy=args.approx_instant_energy)
+
     tokenizer = AutoTokenizer.from_pretrained(args.model, clean_up_tokenization_spaces=False)
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "left"
@@ -38,8 +43,6 @@ def bench(args):
         logger.info("Creating benchmark dataset in-memory")
         dataset = create_warmup_measure_dataset(tokenizer, args.hf_repo_id, args.dataset_split,
                                                 args.measure_samples, args.warmup_samples)
-
-    monitor = ZeusMonitor()
 
     if args.path:
         base_out_path = join(args.path, args.model.replace("/", "_"))
